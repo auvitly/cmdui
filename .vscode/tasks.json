@@ -1,0 +1,72 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Verify ignore patterns",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"check-ignore",
+				"-v",
+				"cmdui.exe",
+				"cmdui",
+				"cmdui.test",
+				"bin/server",
+				"build/server",
+				"data/cmdui.sqlite",
+				"data/cmdui.sqlite-wal",
+				"state.db",
+				"state.db-wal"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check Git metadata",
+			"type": "shell",
+			"command": "Test-Path",
+			"args": [
+				".git"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Parse example config JSON",
+			"type": "shell",
+			"command": "Get-Content",
+			"args": [
+				"-Raw",
+				"config.example.json"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test config package",
+			"type": "shell",
+			"command": "go",
+			"args": [
+				"test",
+				"./internal/config"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$go"
+			]
+		},
+		{
+			"label": "Validate config example JSON syntax",
+			"type": "shell",
+			"command": "Get-Content",
+			"args": [
+				"-Raw",
+				"config.example.json",
+				"|",
+				"ConvertFrom-Json"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}

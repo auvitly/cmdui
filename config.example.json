@@ -1,0 +1,18 @@
+{
+  "address": "127.0.0.1:8080",
+  "database_path": "data/cmdui.sqlite",
+  "session_ttl_minutes": 480,
+  "max_command_timeout_seconds": 30,
+  "max_output_bytes": 65536,
+  "max_concurrent_commands": 4,
+  "cookie_secure": false,
+  "allowed_executables": [],
+  "script_interpreter": "",
+  "users": [
+    {
+      "username": "admin",
+      "password": "change-this-demo-password",
+      "role": "admin"
+    }
+  ]
+}

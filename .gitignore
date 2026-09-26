@@ -1,0 +1,22 @@
+/config.json
+/data/
+/cmdui
+/cmdui.exe
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/build/
+
+# Local database files and SQLite sidecars
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3*
+*.db
+*.db-*
