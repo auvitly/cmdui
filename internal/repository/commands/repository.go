@@ -12,4 +12,5 @@ type Repository interface {
 	SaveCustomIcon(icon domain.CustomIcon) (int64, error)
 	ListCustomIcons() ([]domain.CustomIcon, error)
 	GetCustomIcon(id int64) (domain.CustomIcon, error)
+	DeleteCustomIcon(id int64) error
 }

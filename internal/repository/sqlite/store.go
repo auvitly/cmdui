@@ -247,6 +247,28 @@ func (s *Store) GetCustomIcon(id int64) (CustomIcon, error) {
 	return icon, nil
 }
 
+func (s *Store) DeleteCustomIcon(id int64) error {
+	var used int
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM commands WHERE icon = ?)`, fmt.Sprintf("custom-%d", id)).Scan(&used); err != nil {
+		return fmt.Errorf("check custom icon usage: %w", err)
+	}
+	if used != 0 {
+		return errors.New("custom icon is in use")
+	}
+	result, err := s.db.Exec(`DELETE FROM custom_icons WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete custom icon: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check deleted custom icon: %w", err)
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *Store) SaveUser(user User) error {
 	_, err := s.db.Exec(`INSERT INTO users(username, password_hash, role, created_at) VALUES(?, ?, ?, ?)`,
 		user.Username, user.PasswordHash, user.Role, time.Now().UTC().Format(time.RFC3339Nano))

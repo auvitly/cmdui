@@ -69,6 +69,7 @@ type customIconRepository interface {
 	SaveCustomIcon(domain.CustomIcon) (int64, error)
 	ListCustomIcons() ([]domain.CustomIcon, error)
 	GetCustomIcon(int64) (domain.CustomIcon, error)
+	DeleteCustomIcon(int64) error
 }
 
 func (run *activeRun) setProcess(process *exec.Cmd) {
@@ -207,6 +208,14 @@ func (s *Service) GetCustomIcon(id int64) (domain.CustomIcon, error) {
 		return domain.CustomIcon{}, errors.New("custom icons are not supported")
 	}
 	return repository.GetCustomIcon(id)
+}
+
+func (s *Service) DeleteCustomIcon(id int64) error {
+	repository, ok := s.commands.(customIconRepository)
+	if !ok {
+		return errors.New("custom icons are not supported")
+	}
+	return repository.DeleteCustomIcon(id)
 }
 
 func (s *Service) Save(command domain.Command) (int64, error) {

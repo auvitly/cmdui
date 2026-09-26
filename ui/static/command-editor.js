@@ -137,19 +137,44 @@
     uploadInput.accept = "image/svg+xml,.svg";
     uploadInput.hidden = true;
     dialog.append(uploadInput);
+    const deleteCustomIcon = async (icon, option, event) => {
+      event.stopPropagation();
+      const csrf = form.elements.namedItem("csrf")?.value || "";
+      if (!window.confirm(`Удалить иконку «${icon.name}»?`)) return;
+      try {
+        const response = await fetch(`/admin/icons/${icon.id}`, {
+          method: "DELETE",
+          headers: { "Accept": "application/json", "X-CSRF-Token": csrf },
+        });
+        if (response.status === 403) throw new Error("Сессия истекла. Обновите страницу и войдите снова.");
+        if (!response.ok) throw new Error((await response.text()).trim() || "Не удалось удалить SVG-иконку.");
+        if (iconInput.value === icon.key) setIcon(iconOptions.find((item) => item.dataset.iconKey === ""));
+        option.remove();
+        iconOptions = iconOptions.filter((item) => item !== option);
+      } catch (error) {
+        window.alert(error.message || "Не удалось удалить SVG-иконку.");
+      }
+    };
     const addCustomIconOption = (icon) => {
       if (iconOptions.some((option) => option.dataset.iconKey === icon.key)) return iconOptions.find((option) => option.dataset.iconKey === icon.key);
-      const option = document.createElement("button");
+      const option = document.createElement("div");
       option.className = "icon-option";
-      option.type = "button";
       option.role = "option";
+      option.tabIndex = 0;
       option.dataset.iconKey = icon.key;
       option.dataset.iconLabel = icon.name;
       option.setAttribute("aria-label", icon.name);
       option.setAttribute("aria-selected", "false");
-      option.innerHTML = `<span class="icon-picker-glyph"><img class="app-mark custom-mark" src="/icons/custom/${icon.id}" alt="" aria-hidden="true"></span>`;
+      option.innerHTML = `<span class="icon-picker-glyph"><img class="app-mark custom-mark" src="/icons/custom/${icon.id}" alt="" aria-hidden="true"></span><button class="icon-delete" type="button" aria-label="Удалить иконку ${icon.name}" title="Удалить иконку">×</button>`;
       iconMenu.insertBefore(option, uploadOption);
       option.addEventListener("click", () => setIcon(option));
+      option.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setIcon(option);
+        }
+      });
+      option.querySelector(".icon-delete").addEventListener("click", (event) => deleteCustomIcon(icon, option, event));
       iconOptions.push(option);
       return option;
     };
@@ -203,18 +228,20 @@
       const file = uploadInput.files?.[0];
       if (!file) return;
       const defaultName = file.name.replace(/\.svg$/i, "");
-      const name = window.prompt("Название SVG-иконки", defaultName)?.trim();
+      const name = defaultName.trim();
       if (!name) {
         uploadInput.value = "";
         return;
       }
       const formData = new FormData();
-      formData.append("csrf", document.querySelector('[name="csrf"]')?.value || "");
+      formData.append("csrf", form.elements.namedItem("csrf")?.value || "");
       formData.append("name", name);
       formData.append("icon", file);
       try {
-        const response = await fetch("/admin/icons", { method: "POST", body: formData, headers: { "Accept": "application/json" } });
-        if (!response.ok) throw new Error(await response.text());
+        const csrf = form.elements.namedItem("csrf")?.value || "";
+        const response = await fetch("/admin/icons", { method: "POST", body: formData, headers: { "Accept": "application/json", "X-CSRF-Token": csrf } });
+        if (response.status === 403) throw new Error("Сессия истекла. Обновите страницу и войдите снова.");
+        if (!response.ok) throw new Error((await response.text()).trim() || "Не удалось загрузить SVG-иконку.");
         const icon = await response.json();
         setIcon(addCustomIconOption(icon));
       } catch (error) {

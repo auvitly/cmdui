@@ -21,3 +21,18 @@ func TestLinkifyDescriptionDoesNotLinkUnsupportedSchemes(t *testing.T) {
 		t.Fatalf("unsupported scheme became clickable: %s", got)
 	}
 }
+
+func TestLinkifyDescriptionUsesMarkdownLinkText(t *testing.T) {
+	got := string(linkifyDescription(`Документы: [Открыть API](https://example.com/api).`))
+	want := `<a href="https://example.com/api" target="_blank" rel="noopener noreferrer">Открыть API</a>`
+	if !strings.Contains(got, want) || strings.Contains(got, "[Открыть API]") || strings.Contains(got, ">https://example.com/api</a>") {
+		t.Fatalf("markdown link was not rendered with its label: %s", got)
+	}
+}
+
+func TestLinkifyDescriptionEscapesMarkdownLabel(t *testing.T) {
+	got := string(linkifyDescription(`[<script>](https://example.com)`))
+	if strings.Contains(got, "<script>") || !strings.Contains(got, "&lt;script&gt;") {
+		t.Fatalf("markdown label was not escaped: %s", got)
+	}
+}

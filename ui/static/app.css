@@ -609,6 +609,7 @@ summary:focus-visible {
 }
 
 .icon-option {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -759,4 +760,26 @@ summary:focus-visible {
     grid-column: 1 / -1;
     grid-row: auto;
   }
+}
+
+.icon-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #9aa3ad;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-delete:hover {
+  color: #c14b42;
 }

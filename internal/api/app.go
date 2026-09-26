@@ -129,6 +129,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /runs/{id}/status", a.protectAdminOrOperator(a.runStatus))
 	mux.HandleFunc("GET /admin/icons", a.protect(true, a.listCustomIcons))
 	mux.HandleFunc("POST /admin/icons", a.protect(true, a.uploadCustomIcon))
+	mux.HandleFunc("DELETE /admin/icons/{id}", a.protect(true, a.deleteCustomIcon))
 	mux.HandleFunc("GET /icons/custom/{id}", a.protect(false, a.customIconAsset))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(ui.StaticFiles()))))
 	mux.HandleFunc("POST /logout", a.protect(false, a.logout))
@@ -228,6 +229,26 @@ func (a *App) customIconAsset(w http.ResponseWriter, r *http.Request, user User,
 	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write([]byte(icon.SVG))
+}
+
+func (a *App) deleteCustomIcon(w http.ResponseWriter, r *http.Request, user User, csrf string) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := a.commands.DeleteCustomIcon(id); err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			http.NotFound(w, r)
+		case strings.Contains(err.Error(), "in use"):
+			http.Error(w, "Иконка используется командой и не может быть удалена", http.StatusConflict)
+		default:
+			a.serverError(w, "delete custom icon", err)
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func validateCustomSVG(data []byte) error {
@@ -355,12 +376,15 @@ func (a *App) protectRoles(adminOnly, adminOrOperatorOnly bool, next protectedHa
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		if r.Method == http.MethodPost {
+		if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 			if err := r.ParseForm(); err != nil {
 				http.Error(w, "Invalid form submission", http.StatusBadRequest)
 				return
 			}
 			supplied := r.FormValue("csrf")
+			if supplied == "" {
+				supplied = r.Header.Get("X-CSRF-Token")
+			}
 			if len(supplied) != len(csrf) || subtle.ConstantTimeCompare([]byte(supplied), []byte(csrf)) != 1 {
 				http.Error(w, "Invalid request token", http.StatusForbidden)
 				return

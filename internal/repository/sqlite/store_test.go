@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,6 +146,12 @@ func TestSQLitePersistsCustomIcons(t *testing.T) {
 	}
 	if len(icons) != 1 || icons[0].ID != iconID {
 		t.Fatalf("listed custom icons = %#v", icons)
+	}
+	if err := store.DeleteCustomIcon(iconID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetCustomIcon(iconID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("deleted custom icon lookup error = %v, want sql.ErrNoRows", err)
 	}
 }
 

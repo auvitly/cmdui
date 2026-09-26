@@ -125,32 +125,48 @@ var CommandsTemplate = template.Must(template.New("commands").Funcs(template.Fun
 }).Parse(labelRowHTML + withSharedStylesheet(commandsPageHTML)))
 
 var descriptionURLPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
+var descriptionMarkdownLinkPattern = regexp.MustCompile(`\[([^\]\r\n]+)\]\((https?://[^\s)]+)\)`)
 
 func linkifyDescription(description string) template.HTML {
 	var output strings.Builder
 	position := 0
-	for _, bounds := range descriptionURLPattern.FindAllStringIndex(description, -1) {
+	for _, bounds := range descriptionMarkdownLinkPattern.FindAllStringSubmatchIndex(description, -1) {
 		start, end := bounds[0], bounds[1]
-		candidate := description[start:end]
+		output.WriteString(renderDescriptionText(description[position:start]))
+		label := description[bounds[2]:bounds[3]]
+		urlText := description[bounds[4]:bounds[5]]
+		output.WriteString(descriptionLink(urlText, label))
+		position = end
+	}
+	output.WriteString(renderDescriptionText(description[position:]))
+	return template.HTML(output.String())
+}
+
+func renderDescriptionText(text string) string {
+	var output strings.Builder
+	position := 0
+	for _, bounds := range descriptionURLPattern.FindAllStringIndex(text, -1) {
+		start, end := bounds[0], bounds[1]
+		candidate := text[start:end]
 		urlText := strings.TrimRight(candidate, ".,!?;:)]")
-		if urlText == "" {
+		if urlText == "" || descriptionLink(urlText, urlText) == html.EscapeString(urlText) {
 			continue
 		}
-		parsed, err := url.Parse(urlText)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
-			continue
-		}
-		output.WriteString(html.EscapeString(description[position:start]))
-		output.WriteString(`<a href="`)
-		output.WriteString(html.EscapeString(urlText))
-		output.WriteString(`" target="_blank" rel="noopener noreferrer">`)
-		output.WriteString(html.EscapeString(urlText))
-		output.WriteString(`</a>`)
+		output.WriteString(html.EscapeString(text[position:start]))
+		output.WriteString(descriptionLink(urlText, urlText))
 		output.WriteString(html.EscapeString(candidate[len(urlText):]))
 		position = end
 	}
-	output.WriteString(html.EscapeString(description[position:]))
-	return template.HTML(output.String())
+	output.WriteString(html.EscapeString(text[position:]))
+	return output.String()
+}
+
+func descriptionLink(urlText, label string) string {
+	parsed, err := url.Parse(urlText)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+		return html.EscapeString(urlText)
+	}
+	return `<a href="` + html.EscapeString(urlText) + `" target="_blank" rel="noopener noreferrer">` + html.EscapeString(label) + `</a>`
 }
 
 type iconChoice struct {
