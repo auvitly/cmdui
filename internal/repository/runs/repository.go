@@ -1,6 +1,6 @@
 package runs
 
-import "cmdui/internal/domain"
+import "github.com/auvitly/cmdui.git/internal/domain"
 
 type Repository interface {
 	SaveRun(domain.Run) (int64, error)

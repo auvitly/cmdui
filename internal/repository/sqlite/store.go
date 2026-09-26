@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"cmdui/internal/domain"
-	"cmdui/internal/repository/commands"
-	"cmdui/internal/repository/runs"
-	"cmdui/internal/repository/users"
+	"github.com/auvitly/cmdui.git/internal/domain"
+	"github.com/auvitly/cmdui.git/internal/repository/commands"
+	"github.com/auvitly/cmdui.git/internal/repository/runs"
+	"github.com/auvitly/cmdui.git/internal/repository/users"
 
 	_ "modernc.org/sqlite"
 )
@@ -22,6 +22,7 @@ type Command = domain.Command
 type Run = domain.Run
 type RunFilter = domain.RunFilter
 type User = domain.User
+type CustomIcon = domain.CustomIcon
 
 type Store struct {
 	db *sql.DB
@@ -93,6 +94,12 @@ func OpenStore(path string) (*Store, error) {
 			duration_ms INTEGER NOT NULL,
 			stdout TEXT NOT NULL,
 			stderr TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS custom_icons (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			svg TEXT NOT NULL,
+			created_at TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_command_runs_started_at ON command_runs(started_at DESC);
 	`); err != nil {
@@ -191,6 +198,53 @@ func ensureColumn(db *sql.DB, table, column, definition string) (bool, error) {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func (s *Store) SaveCustomIcon(icon CustomIcon) (int64, error) {
+	result, err := s.db.Exec(`INSERT INTO custom_icons(name, svg, created_at) VALUES(?, ?, ?)`, icon.Name, icon.SVG, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, fmt.Errorf("save custom icon: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+func (s *Store) ListCustomIcons() ([]CustomIcon, error) {
+	rows, err := s.db.Query(`SELECT id, name, svg, created_at FROM custom_icons ORDER BY name COLLATE NOCASE`)
+	if err != nil {
+		return nil, fmt.Errorf("list custom icons: %w", err)
+	}
+	defer rows.Close()
+	icons := make([]CustomIcon, 0)
+	for rows.Next() {
+		var icon CustomIcon
+		var createdAt string
+		if err := rows.Scan(&icon.ID, &icon.Name, &icon.SVG, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan custom icon: %w", err)
+		}
+		icon.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse custom icon timestamp: %w", err)
+		}
+		icons = append(icons, icon)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read custom icons: %w", err)
+	}
+	return icons, nil
+}
+
+func (s *Store) GetCustomIcon(id int64) (CustomIcon, error) {
+	var icon CustomIcon
+	var createdAt string
+	err := s.db.QueryRow(`SELECT id, name, svg, created_at FROM custom_icons WHERE id = ?`, id).Scan(&icon.ID, &icon.Name, &icon.SVG, &createdAt)
+	if err != nil {
+		return CustomIcon{}, err
+	}
+	icon.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return CustomIcon{}, fmt.Errorf("parse custom icon timestamp: %w", err)
+	}
+	return icon, nil
 }
 
 func (s *Store) SaveUser(user User) error {

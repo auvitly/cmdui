@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"cmdui/internal/repository/sqlite"
-	authservice "cmdui/internal/service/auth"
-	commandservice "cmdui/internal/service/commands"
+	"github.com/auvitly/cmdui.git/internal/repository/sqlite"
+	authservice "github.com/auvitly/cmdui.git/internal/service/auth"
+	commandservice "github.com/auvitly/cmdui.git/internal/service/commands"
 
 	"golang.org/x/crypto/bcrypt"
 )

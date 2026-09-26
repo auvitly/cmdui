@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"cmdui/internal/api"
-	"cmdui/internal/config"
-	"cmdui/internal/repository/sqlite"
-	authservice "cmdui/internal/service/auth"
-	commandservice "cmdui/internal/service/commands"
+	"github.com/auvitly/cmdui.git/internal/api"
+	"github.com/auvitly/cmdui.git/internal/config"
+	"github.com/auvitly/cmdui.git/internal/repository/sqlite"
+	authservice "github.com/auvitly/cmdui.git/internal/service/auth"
+	commandservice "github.com/auvitly/cmdui.git/internal/service/commands"
 )
 
 func main() {

@@ -5,10 +5,11 @@ import (
 	"html/template"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	"cmdui/internal/domain"
+	"github.com/auvitly/cmdui.git/internal/domain"
 )
 
 const labelRowHTML = `{{define "label-row"}}
@@ -75,7 +76,9 @@ const commandsPageHTML = `<!doctype html>
     .color-popover{position:absolute;z-index:5;right:42px;top:calc(100% - 2px);width:min(310px,calc(100vw - 70px));padding:12px;background:#fff;border:1px solid #d4ddd6;border-radius:6px;box-shadow:0 8px 24px #1c302520}.color-popover[hidden]{display:none}
     .popover-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:12px}.popover-close{border:0;background:none;color:#66736b;font-size:18px;cursor:pointer}.swatches{display:flex;gap:6px;flex-wrap:wrap}.swatch{width:23px;height:23px;border:1px solid #bfcac1;border-radius:50%;padding:0;cursor:pointer}.custom-color{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12px}.color-picker{width:44px;height:30px;padding:2px;border:1px solid #cfd8d1;border-radius:4px;background:white}.rgb-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:9px}.rgb{font-size:11px!important;color:#68756c}.rgb input{width:100%;padding:0;accent-color:#16845b}.rgb output{float:right;font-variant-numeric:tabular-nums}
     .form-actions{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap;margin:0 -22px;padding:12px 22px;background:#fff;border-top:1px solid #e1e6e2}
-    @media(max-width:760px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid #e1e6e2;padding:13px 16px;gap:9px}.nav{grid-template-columns:repeat(3,minmax(0,1fr))}.account{display:flex;align-items:center;gap:10px;border:0;padding:0;margin:0;flex-wrap:wrap}.account strong{display:inline;margin:0}.logout{margin:0 0 0 auto}.workspace{padding:22px 16px}.permission-grid,.basic-grid{grid-template-columns:1fr}.dialog-head,.dialog-body{padding-left:15px;padding-right:15px}.form-actions{margin:0 -15px;padding:12px 15px}.topline h1{font-size:23px}}
+	.command-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}.command-search{width:min(360px,100%);min-height:34px;padding:7px 10px;border:1px solid #cfd8d1;border-radius:4px;background:#fff;color:#27312d;font:inherit;font-size:12px}.command-layout{display:inline-flex;align-items:center;gap:4px}.command-layout-label{color:#78837c;font-size:12px}.command-layout button{min-width:30px;height:30px;padding:0 7px;border:1px solid #cbd6ce;border-radius:4px;background:#fff;color:#35433a;font:inherit;font-size:12px;cursor:pointer}.command-layout button[aria-pressed="true"]{border-color:#147b54;background:#eaf5ef;color:#126c4a}.command-board{overflow:visible;border:0;background:transparent}.command-board table{min-width:0}.command-board thead{display:none}.command-board tbody{display:grid;grid-template-columns:repeat(var(--command-columns,4),minmax(0,1fr));gap:12px}.command-board tr{display:flex;min-width:0;flex-direction:column;justify-content:space-between;min-height:170px;padding:14px;border:1px solid #dce4de;border-radius:6px;background:#fff;box-shadow:0 2px 8px #27364a0d}.command-board td{display:block;padding:0;border:0}.command-board td:not(:first-child):not(.command-actions-cell){display:none}.command-board .command-actions-cell{margin-top:14px}.command-board .description{white-space:pre-wrap}.command-board tr[hidden]{display:none}.command-board .empty{grid-column:1/-1;min-height:auto;text-align:center}
+	@media(max-width:980px){.command-board tbody{grid-template-columns:repeat(min(var(--command-columns,4),3),minmax(0,1fr))}}
+	@media(max-width:760px){.layout{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid #e1e6e2;padding:13px 16px;gap:9px}.nav{grid-template-columns:repeat(3,minmax(0,1fr))}.account{display:flex;align-items:center;gap:10px;border:0;padding:0;margin:0;flex-wrap:wrap}.account strong{display:inline;margin:0}.logout{margin:0 0 0 auto}.workspace{padding:22px 16px}.permission-grid,.basic-grid{grid-template-columns:1fr}.dialog-head,.dialog-body{padding-left:15px;padding-right:15px}.form-actions{margin:0 -15px;padding:12px 15px}.topline h1{font-size:23px}.command-toolbar{align-items:stretch;flex-direction:column}.command-search{width:100%}.command-board tbody{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -201,6 +204,11 @@ var appIconAssets = map[string]template.HTML{
 func iconGlyph(key string) template.HTML {
 	if asset, ok := appIconAssets[key]; ok {
 		return asset
+	}
+	if strings.HasPrefix(key, "custom-") {
+		if id, err := strconv.ParseInt(strings.TrimPrefix(key, "custom-"), 10, 64); err == nil && id > 0 {
+			return template.HTML(`<img class="app-mark custom-mark" src="/icons/custom/` + strconv.FormatInt(id, 10) + `" alt="" aria-hidden="true">`)
+		}
 	}
 	for _, choice := range popularIcons {
 		if choice.Key == key {

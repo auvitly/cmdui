@@ -33,7 +33,7 @@ func TestPodmanIconVariantsUseTechIconsAsset(t *testing.T) {
 }
 
 func TestBrandSVGsAreEmbeddedAndValid(t *testing.T) {
-	for _, name := range []string{"go.svg", "grpc.svg", "podman.svg", "run-spinner.svg"} {
+	for _, name := range []string{"go.svg", "grpc.svg", "podman.svg", "run-spinner.svg", "terminal.svg", "users.svg", "history.svg"} {
 		t.Run(name, func(t *testing.T) {
 			data, err := fs.ReadFile(StaticFiles(), "icons/"+name)
 			if err != nil {

@@ -4,9 +4,12 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -18,12 +21,12 @@ import (
 	"sync"
 	"time"
 
-	"cmdui/internal/config"
-	"cmdui/internal/domain"
-	"cmdui/internal/platform"
-	authservice "cmdui/internal/service/auth"
-	commandservice "cmdui/internal/service/commands"
-	"cmdui/ui"
+	"github.com/auvitly/cmdui.git/internal/config"
+	"github.com/auvitly/cmdui.git/internal/domain"
+	"github.com/auvitly/cmdui.git/internal/platform"
+	authservice "github.com/auvitly/cmdui.git/internal/service/auth"
+	commandservice "github.com/auvitly/cmdui.git/internal/service/commands"
+	"github.com/auvitly/cmdui.git/ui"
 )
 
 type User = domain.User
@@ -122,8 +125,11 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", a.protect(false, a.home))
 	mux.HandleFunc("GET /users", a.protect(true, a.usersPage))
 	mux.HandleFunc("GET /runs", a.protectAdminOrOperator(a.runsPage))
-	mux.HandleFunc("GET /runs/availability", a.protectAdminOrOperator(a.runAvailability))
+	mux.HandleFunc("GET /runs/availability", a.protect(false, a.runAvailability))
 	mux.HandleFunc("GET /runs/{id}/status", a.protectAdminOrOperator(a.runStatus))
+	mux.HandleFunc("GET /admin/icons", a.protect(true, a.listCustomIcons))
+	mux.HandleFunc("POST /admin/icons", a.protect(true, a.uploadCustomIcon))
+	mux.HandleFunc("GET /icons/custom/{id}", a.protect(false, a.customIconAsset))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(ui.StaticFiles()))))
 	mux.HandleFunc("POST /logout", a.protect(false, a.logout))
 	mux.HandleFunc("POST /admin/commands", a.protect(true, a.saveCommand))
@@ -139,6 +145,108 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (a *App) listCustomIcons(w http.ResponseWriter, r *http.Request, user User, csrf string) {
+	icons, err := a.commands.ListCustomIcons()
+	if err != nil {
+		a.serverError(w, "list custom icons", err)
+		return
+	}
+	type iconResponse struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+		Key  string `json:"key"`
+	}
+	response := make([]iconResponse, 0, len(icons))
+	for _, icon := range icons {
+		response = append(response, iconResponse{ID: icon.ID, Name: icon.Name, Key: fmt.Sprintf("custom-%d", icon.ID)})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (a *App) uploadCustomIcon(w http.ResponseWriter, r *http.Request, user User, csrf string) {
+	r.Body = http.MaxBytesReader(w, r.Body, 300*1024)
+	if err := r.ParseMultipartForm(300 * 1024); err != nil {
+		http.Error(w, "SVG-файл слишком большой или поврежден", http.StatusBadRequest)
+		return
+	}
+	file, header, err := r.FormFile("icon")
+	if err != nil {
+		http.Error(w, "Выберите SVG-файл", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 256*1024+1))
+	if err != nil {
+		http.Error(w, "Не удалось прочитать SVG-файл", http.StatusBadRequest)
+		return
+	}
+	if err := validateCustomSVG(data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 80 {
+		http.Error(w, "Название иконки должно содержать от 1 до 80 символов", http.StatusBadRequest)
+		return
+	}
+	iconID, err := a.commands.SaveCustomIcon(domain.CustomIcon{Name: name, SVG: string(data)})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			http.Error(w, "Иконка с таким названием уже существует", http.StatusConflict)
+			return
+		}
+		a.serverError(w, "save custom icon", err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+		Key  string `json:"key"`
+	}{ID: iconID, Name: name, Key: fmt.Sprintf("custom-%d", iconID)})
+}
+
+func (a *App) customIconAsset(w http.ResponseWriter, r *http.Request, user User, csrf string) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		http.NotFound(w, r)
+		return
+	}
+	icon, err := a.commands.GetCustomIcon(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(icon.SVG))
+}
+
+func validateCustomSVG(data []byte) error {
+	if len(data) == 0 || len(data) > 256*1024 {
+		return errors.New("SVG-файл должен быть размером от 1 до 256 КБ")
+	}
+	var root struct {
+		XMLName xml.Name
+	}
+	if err := xml.Unmarshal(data, &root); err != nil || root.XMLName.Local != "svg" {
+		return errors.New("файл должен содержать корректный SVG")
+	}
+	lower := strings.ToLower(string(data))
+	for _, marker := range []string{"<script", "javascript:", "onload=", "onclick=", "onerror=", "href=\"http", "xlink:href=\"http"} {
+		if strings.Contains(lower, marker) {
+			return errors.New("SVG содержит запрещенное содержимое")
+		}
+	}
+	return nil
 }
 
 func (a *App) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -471,15 +579,22 @@ func (a *App) runAvailability(w http.ResponseWriter, r *http.Request, user User,
 		visibleCommandIDs[command.ID] = struct{}{}
 	}
 	commandIDs := make([]int64, 0)
+	activeCommandRuns := a.commands.ActiveCommandRuns()
+	commandRuns := make(map[int64]int64)
 	for _, commandID := range a.commands.ActiveCommandIDs() {
 		if _, visible := visibleCommandIDs[commandID]; visible {
 			commandIDs = append(commandIDs, commandID)
+			if runID, active := activeCommandRuns[commandID]; active {
+				commandRuns[commandID] = runID
+			}
 		}
 	}
 	_ = json.NewEncoder(w).Encode(struct {
-		Busy       bool    `json:"busy"`
-		CommandIDs []int64 `json:"command_ids"`
-	}{Busy: a.commands.HasActiveRun(), CommandIDs: commandIDs})
+		Busy         bool            `json:"busy"`
+		CommandIDs   []int64         `json:"command_ids"`
+		CommandRuns  map[int64]int64 `json:"command_runs"`
+		CanInterrupt bool            `json:"can_interrupt"`
+	}{Busy: a.commands.HasActiveRun(), CommandIDs: commandIDs, CommandRuns: commandRuns, CanInterrupt: user.Role == "admin"})
 }
 
 func (a *App) updateUserRole(w http.ResponseWriter, r *http.Request, actor User, csrf string) {
@@ -571,6 +686,7 @@ func (a *App) home(w http.ResponseWriter, r *http.Request, user User, csrf strin
 			http.NotFound(w, r)
 			return
 		}
+		command.Description = base64.StdEncoding.EncodeToString([]byte(command.Description))
 		data.Editing = &command
 	}
 	if len(data.RunPanels) == 0 {

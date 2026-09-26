@@ -3,8 +3,8 @@ package auth
 import (
 	"errors"
 
-	"cmdui/internal/domain"
-	"cmdui/internal/repository/users"
+	"github.com/auvitly/cmdui.git/internal/domain"
+	"github.com/auvitly/cmdui.git/internal/repository/users"
 	"golang.org/x/crypto/bcrypt"
 )
 

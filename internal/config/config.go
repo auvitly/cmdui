@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"cmdui/internal/domain"
+	"github.com/auvitly/cmdui.git/internal/domain"
 
 	"golang.org/x/crypto/bcrypt"
 )

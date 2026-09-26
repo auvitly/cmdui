@@ -3,10 +3,11 @@ package sqlite
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"cmdui/internal/domain"
+	"github.com/auvitly/cmdui.git/internal/domain"
 )
 
 func TestSQLitePersistsCommandsAndRuns(t *testing.T) {
@@ -117,6 +118,33 @@ func TestSQLiteNormalizesInterruptedExitCodes(t *testing.T) {
 	}
 	if storedExitCode != -1 {
 		t.Fatalf("persisted interrupted exit code = %d, want -1", storedExitCode)
+	}
+}
+
+func TestSQLitePersistsCustomIcons(t *testing.T) {
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	iconID, err := store.SaveCustomIcon(CustomIcon{Name: "Company mark", SVG: `<svg viewBox="0 0 10 10"><path d="M0 0h10v10H0z"/></svg>`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	icon, err := store.GetCustomIcon(iconID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if icon.ID != iconID || icon.Name != "Company mark" || !strings.Contains(icon.SVG, "viewBox") {
+		t.Fatalf("stored custom icon = %#v", icon)
+	}
+	icons, err := store.ListCustomIcons()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(icons) != 1 || icons[0].ID != iconID {
+		t.Fatalf("listed custom icons = %#v", icons)
 	}
 }
 

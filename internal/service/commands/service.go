@@ -10,15 +10,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"cmdui/internal/config"
-	"cmdui/internal/domain"
-	commandrepo "cmdui/internal/repository/commands"
-	runrepo "cmdui/internal/repository/runs"
-	userrepo "cmdui/internal/repository/users"
+	"github.com/auvitly/cmdui.git/internal/config"
+	"github.com/auvitly/cmdui.git/internal/domain"
+	commandrepo "github.com/auvitly/cmdui.git/internal/repository/commands"
+	runrepo "github.com/auvitly/cmdui.git/internal/repository/runs"
+	userrepo "github.com/auvitly/cmdui.git/internal/repository/users"
 )
 
 var (
@@ -62,6 +63,12 @@ type activeRun struct {
 	username           string
 	role               string
 	startedAt          time.Time
+}
+
+type customIconRepository interface {
+	SaveCustomIcon(domain.CustomIcon) (int64, error)
+	ListCustomIcons() ([]domain.CustomIcon, error)
+	GetCustomIcon(int64) (domain.CustomIcon, error)
 }
 
 func (run *activeRun) setProcess(process *exec.Cmd) {
@@ -178,6 +185,30 @@ func (s *Service) AllowedExecutables() []string {
 	return list
 }
 
+func (s *Service) SaveCustomIcon(icon domain.CustomIcon) (int64, error) {
+	repository, ok := s.commands.(customIconRepository)
+	if !ok {
+		return 0, errors.New("custom icons are not supported")
+	}
+	return repository.SaveCustomIcon(icon)
+}
+
+func (s *Service) ListCustomIcons() ([]domain.CustomIcon, error) {
+	repository, ok := s.commands.(customIconRepository)
+	if !ok {
+		return nil, errors.New("custom icons are not supported")
+	}
+	return repository.ListCustomIcons()
+}
+
+func (s *Service) GetCustomIcon(id int64) (domain.CustomIcon, error) {
+	repository, ok := s.commands.(customIconRepository)
+	if !ok {
+		return domain.CustomIcon{}, errors.New("custom icons are not supported")
+	}
+	return repository.GetCustomIcon(id)
+}
+
 func (s *Service) Save(command domain.Command) (int64, error) {
 	command.Script = strings.TrimSpace(command.Script)
 	if command.Script != "" {
@@ -190,7 +221,15 @@ func (s *Service) Save(command domain.Command) (int64, error) {
 		return 0, ErrInvalidCommand
 	}
 	if command.Icon != "" {
-		if _, allowed := allowedIcons[command.Icon]; !allowed {
+		if customID, custom := customIconID(command.Icon); custom {
+			repository, ok := s.commands.(customIconRepository)
+			if !ok {
+				return 0, fmt.Errorf("%w: custom icons are not supported", ErrInvalidCommand)
+			}
+			if _, err := repository.GetCustomIcon(customID); err != nil {
+				return 0, fmt.Errorf("%w: unknown custom icon %q", ErrInvalidCommand, command.Icon)
+			}
+		} else if _, allowed := allowedIcons[command.Icon]; !allowed {
 			return 0, fmt.Errorf("%w: unsupported icon %q", ErrInvalidCommand, command.Icon)
 		}
 	}
@@ -229,6 +268,14 @@ func (s *Service) Save(command domain.Command) (int64, error) {
 		}
 	}
 	return s.commands.SaveCommand(command)
+}
+
+func customIconID(key string) (int64, bool) {
+	if !strings.HasPrefix(key, "custom-") {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(key, "custom-"), 10, 64)
+	return id, err == nil && id > 0
 }
 
 func (s *Service) Get(id int64) (domain.Command, error) {
@@ -435,6 +482,17 @@ func (s *Service) ActiveCommandIDs() []int64 {
 		commandIDs = append(commandIDs, commandID)
 	}
 	return commandIDs
+}
+
+func (s *Service) ActiveCommandRuns() map[int64]int64 {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+
+	commandRuns := make(map[int64]int64, len(s.active))
+	for runID, active := range s.active {
+		commandRuns[active.command.ID] = runID
+	}
+	return commandRuns
 }
 
 func (s *Service) releaseCommand(commandID int64) {

@@ -1,6 +1,6 @@
 package users
 
-import "cmdui/internal/domain"
+import "github.com/auvitly/cmdui.git/internal/domain"
 
 type Repository interface {
 	SaveUser(domain.User) error

@@ -17,6 +17,13 @@ type Label struct {
 	Color string
 }
 
+type CustomIcon struct {
+	ID        int64
+	Name      string
+	SVG       string
+	CreatedAt time.Time
+}
+
 type Command struct {
 	ID                int64
 	Name              string

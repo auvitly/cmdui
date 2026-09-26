@@ -12,6 +12,7 @@
     if (status) statusNode.textContent = runStatusLabels[status];
   });
   localizeRunTimestamps();
+  initializeCommandBoard();
   const dialog = document.querySelector("#command-dialog");
   if (!dialog) {
     watchActiveRun();
@@ -19,6 +20,36 @@
   }
 
   const form = dialog.querySelector("form");
+  const iconField = form.querySelector("#command-icon")?.closest(".field");
+  const iconLabelText = form.querySelector('label[for="command-icon"]');
+  const basicGrid = iconField?.closest(".basic-grid");
+  if (iconField && basicGrid) {
+    if (iconLabelText) iconLabelText.textContent = "Icon";
+    basicGrid.prepend(iconField);
+  }
+  const permissionGrid = form.querySelector(".permission-grid");
+  if (permissionGrid) {
+    const operatorView = permissionGrid.querySelector('[name="access_operators"]')?.closest(".permission");
+    const operatorExecution = permissionGrid.querySelector('[name="operators_can_run"]')?.closest(".permission");
+    const userView = permissionGrid.querySelector('[name="access_all_users"]')?.closest(".permission");
+    permissionGrid.querySelectorAll("#specific_users, #specific_operators").forEach((select) => select.closest(".permission")?.remove());
+    if (operatorView) operatorView.querySelector("label").lastChild.textContent = " Оператор: просмотр";
+    if (operatorExecution) operatorExecution.querySelector("label").lastChild.textContent = " Оператор: исполнение";
+    if (userView) userView.querySelector("label").lastChild.textContent = " Пользователь: просмотр";
+    [operatorView, operatorExecution, userView].filter(Boolean).forEach((permission) => permissionGrid.append(permission));
+  }
+  const descriptionInput = form.querySelector("#description");
+  if (descriptionInput) {
+    const description = document.createElement("textarea");
+    description.id = descriptionInput.id;
+    description.name = descriptionInput.name;
+    description.maxLength = descriptionInput.maxLength;
+    description.value = decodeBase64Unicode(descriptionInput.value);
+    description.placeholder = descriptionInput.placeholder;
+    description.className = descriptionInput.className;
+    description.rows = 4;
+    descriptionInput.replaceWith(description);
+  }
   const labelsEditor = dialog.querySelector("#labels-editor");
   const rowTemplate = dialog.querySelector("#label-row-template");
   let paletteIndex = labelsEditor.querySelectorAll(".label-row").length;
@@ -33,6 +64,16 @@
       slider.value = channels[index];
       slider.closest("label").querySelector("output").value = channels[index];
     });
+  }
+
+  function decodeBase64Unicode(value) {
+    if (!value) return "";
+    try {
+      const bytes = Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return value;
+    }
   }
 
   function closeColorPopovers(except) {
@@ -78,16 +119,45 @@
   if (iconPicker) {
     const iconInput = iconPicker.querySelector("[name=icon]");
     const iconTrigger = iconPicker.querySelector(".icon-picker-trigger");
-    const iconOptions = [...iconPicker.querySelectorAll(".icon-option")];
+    let iconOptions = [...iconPicker.querySelectorAll(".icon-option")];
+    const initialIconKey = iconInput.value;
     const iconPreview = iconPicker.querySelector("[data-icon-preview]");
     const iconLabel = iconPicker.querySelector("[data-icon-label]");
     const iconMenu = iconPicker.querySelector(".icon-picker-options");
     dialog.append(iconMenu);
+    const uploadOption = document.createElement("button");
+    uploadOption.className = "icon-option icon-upload-option";
+    uploadOption.type = "button";
+    uploadOption.role = "option";
+    uploadOption.setAttribute("aria-label", "Загрузить SVG-иконку");
+    uploadOption.innerHTML = '<span class="icon-picker-glyph icon-upload-glyph">+</span>';
+    iconMenu.append(uploadOption);
+    const uploadInput = document.createElement("input");
+    uploadInput.type = "file";
+    uploadInput.accept = "image/svg+xml,.svg";
+    uploadInput.hidden = true;
+    dialog.append(uploadInput);
+    const addCustomIconOption = (icon) => {
+      if (iconOptions.some((option) => option.dataset.iconKey === icon.key)) return iconOptions.find((option) => option.dataset.iconKey === icon.key);
+      const option = document.createElement("button");
+      option.className = "icon-option";
+      option.type = "button";
+      option.role = "option";
+      option.dataset.iconKey = icon.key;
+      option.dataset.iconLabel = icon.name;
+      option.setAttribute("aria-label", icon.name);
+      option.setAttribute("aria-selected", "false");
+      option.innerHTML = `<span class="icon-picker-glyph"><img class="app-mark custom-mark" src="/icons/custom/${icon.id}" alt="" aria-hidden="true"></span>`;
+      iconMenu.insertBefore(option, uploadOption);
+      option.addEventListener("click", () => setIcon(option));
+      iconOptions.push(option);
+      return option;
+    };
     const positionIconMenu = () => {
       if (iconMenu.hidden) return;
       const triggerRect = iconTrigger.getBoundingClientRect();
       const edgePadding = 12;
-      const menuWidth = Math.min(390, window.innerWidth - edgePadding * 2);
+      const menuWidth = Math.min(180, window.innerWidth - edgePadding * 2);
       const menuHeight = Math.min(iconMenu.scrollHeight, 260);
       const left = Math.min(triggerRect.left, window.innerWidth - menuWidth - edgePadding);
       let top = triggerRect.bottom + 4;
@@ -107,9 +177,56 @@
       iconMenu.hidden = true;
       iconTrigger.setAttribute("aria-expanded", "false");
     };
+    const loadCustomIcons = async () => {
+      try {
+        const response = await fetch("/admin/icons", { headers: { "Accept": "application/json" }, cache: "no-store" });
+        if (!response.ok) return;
+        const icons = await response.json();
+        icons.forEach(addCustomIconOption);
+        if (initialIconKey) {
+          const selectedOption = iconOptions.find((option) => option.dataset.iconKey === initialIconKey);
+          if (selectedOption) {
+            const wasOpen = !iconMenu.hidden;
+            setIcon(selectedOption);
+            if (wasOpen) {
+              iconMenu.hidden = false;
+              iconTrigger.setAttribute("aria-expanded", "true");
+            }
+          }
+        }
+      } catch {
+        // Built-in icons remain available if custom icons cannot be loaded.
+      }
+    };
+    uploadOption.addEventListener("click", () => uploadInput.click());
+    uploadInput.addEventListener("change", async () => {
+      const file = uploadInput.files?.[0];
+      if (!file) return;
+      const defaultName = file.name.replace(/\.svg$/i, "");
+      const name = window.prompt("Название SVG-иконки", defaultName)?.trim();
+      if (!name) {
+        uploadInput.value = "";
+        return;
+      }
+      const formData = new FormData();
+      formData.append("csrf", document.querySelector('[name="csrf"]')?.value || "");
+      formData.append("name", name);
+      formData.append("icon", file);
+      try {
+        const response = await fetch("/admin/icons", { method: "POST", body: formData, headers: { "Accept": "application/json" } });
+        if (!response.ok) throw new Error(await response.text());
+        const icon = await response.json();
+        setIcon(addCustomIconOption(icon));
+      } catch (error) {
+        window.alert(error.message || "Не удалось загрузить SVG-иконку.");
+      } finally {
+        uploadInput.value = "";
+      }
+    });
     const getSelectedOption = () => iconOptions.find((option) => option.dataset.iconKey === iconInput.value) || iconOptions[0];
     setIcon(getSelectedOption());
     iconTrigger.addEventListener("click", () => {
+      loadCustomIcons();
       iconMenu.hidden = !iconMenu.hidden;
       iconTrigger.setAttribute("aria-expanded", String(!iconMenu.hidden));
       if (!iconMenu.hidden) {
@@ -120,6 +237,7 @@
     dialog.addEventListener("scroll", positionIconMenu, true);
     window.addEventListener("resize", positionIconMenu);
     iconOptions.forEach((option) => option.addEventListener("click", () => setIcon(option)));
+    loadCustomIcons();
     dialog.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !iconMenu.hidden) {
         iconMenu.hidden = true;
@@ -128,18 +246,31 @@
       }
     });
     dialog.addEventListener("click", (event) => {
-      if (!iconPicker.contains(event.target)) {
+      if (!iconPicker.contains(event.target) && !iconMenu.contains(event.target)) {
         iconMenu.hidden = true;
         iconTrigger.setAttribute("aria-expanded", "false");
       }
     });
   }
 
+  const clearEditQuery = () => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("edit")) return;
+    url.searchParams.delete("edit");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  };
   dialog.addEventListener("click", (event) => {
     if (!event.target.closest(".color-popover") && !event.target.closest(".color-trigger")) closeColorPopovers();
   });
-  dialog.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => dialog.close()));
-  document.querySelector("#new-command").addEventListener("click", () => dialog.showModal());
+  dialog.querySelectorAll("[data-close-dialog]").forEach((button) => button.addEventListener("click", () => {
+    clearEditQuery();
+    dialog.close();
+  }));
+  dialog.addEventListener("close", clearEditQuery);
+  document.querySelector("#new-command").addEventListener("click", () => {
+    clearEditQuery();
+    dialog.showModal();
+  });
   if (dialog.hasAttribute("open")) {
     dialog.removeAttribute("open");
     dialog.showModal();
@@ -253,6 +384,42 @@
     });
   }
 
+  function initializeCommandBoard() {
+    const tableWrap = document.querySelector(".table-wrap");
+    const table = tableWrap?.querySelector("table");
+    const rows = [...(table?.querySelectorAll("tbody tr") || [])];
+    if (!tableWrap || !table || !rows.length) return;
+
+    tableWrap.classList.add("command-board");
+    rows.forEach((row) => {
+      const cells = row.querySelectorAll("td");
+      if (cells.length > 1) cells[cells.length - 1].classList.add("command-actions-cell");
+    });
+
+    const sectionHead = tableWrap.closest(".section")?.querySelector(".section-head");
+    if (!sectionHead) return;
+    const toolbar = document.createElement("div");
+    toolbar.className = "command-toolbar";
+    toolbar.innerHTML = '<input class="command-search" type="search" placeholder="Поиск по имени и labels" aria-label="Поиск по имени и labels"><div class="command-layout" role="group" aria-label="Количество колонок"><span class="command-layout-label">Колонок</span><button type="button" data-columns="3" aria-pressed="false">3</button><button type="button" data-columns="4" aria-pressed="true">4</button><button type="button" data-columns="5" aria-pressed="false">5</button></div>';
+    sectionHead.after(toolbar);
+    const search = toolbar.querySelector(".command-search");
+    const layoutButtons = [...toolbar.querySelectorAll("[data-columns]")];
+    const commandRows = rows.filter((row) => !row.querySelector(".empty"));
+    const setColumns = (columns) => {
+      table.style.setProperty("--command-columns", columns);
+      layoutButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.columns === columns)));
+    };
+    layoutButtons.forEach((button) => button.addEventListener("click", () => setColumns(button.dataset.columns)));
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLocaleLowerCase();
+      commandRows.forEach((row) => {
+        const searchable = row.querySelector("td")?.textContent.toLocaleLowerCase() || "";
+        row.hidden = query !== "" && !searchable.includes(query);
+      });
+    });
+    setColumns("4");
+  }
+
   function localizeRunTimestamps() {
     const formatter = new Intl.DateTimeFormat(undefined, {
       dateStyle: "short",
@@ -272,25 +439,87 @@
     if (runForms.length === 0) return;
     const pendingCommandIDs = new Set();
     const commandIDFor = (runForm) => Number(runForm.action.match(/\/commands\/(\d+)\/run$/)?.[1]);
-    const updateButtons = (activeCommandIDs) => runForms.forEach((runForm) => {
+    const updateTiles = (commandRuns, canInterrupt) => runForms.forEach((runForm) => {
       const commandID = commandIDFor(runForm);
-      const busy = pendingCommandIDs.has(commandID) || activeCommandIDs.has(commandID);
-      const button = runForm.querySelector('button[type="submit"]');
-      if (!button) return;
-      button.disabled = busy;
-      button.setAttribute("aria-label", busy ? "Команда уже выполняется" : "Запустить");
-      button.title = busy ? "Эта команда уже выполняется" : "Запустить";
+      const runID = commandRuns[String(commandID)];
+      const busy = pendingCommandIDs.has(commandID) || Boolean(runID);
+      const actionGroup = runForm.closest(".actions") || runForm.parentElement;
+      if (!actionGroup) return;
+      let state = actionGroup.querySelector(".tile-run-state");
+      if (!busy) {
+        state?.remove();
+        runForm.hidden = false;
+        const button = runForm.querySelector('button[type="submit"]');
+        if (button) {
+          button.disabled = false;
+          button.setAttribute("aria-label", "Запустить");
+          button.title = "Запустить";
+        }
+        return;
+      }
+      runForm.hidden = true;
+      if (state) {
+        const interruptForm = state.querySelector("form");
+        if (interruptForm && runID) interruptForm.action = `/runs/${runID}/interrupt`;
+        if (interruptForm || !runID || !canInterrupt) return;
+        state.remove();
+        state = null;
+      }
+      state = document.createElement("span");
+      state.className = "tile-run-state";
+      if (runID && canInterrupt) {
+        const interruptForm = document.createElement("form");
+        interruptForm.method = "post";
+        interruptForm.action = `/runs/${runID}/interrupt`;
+        const csrf = document.querySelector('[name="csrf"]');
+        if (csrf) {
+          const csrfInput = document.createElement("input");
+          csrfInput.type = "hidden";
+          csrfInput.name = "csrf";
+          csrfInput.value = csrf.value;
+          interruptForm.append(csrfInput);
+        }
+        const button = document.createElement("button");
+        button.className = "button danger icon-action";
+        button.type = "submit";
+        button.textContent = "Прервать";
+        button.setAttribute("aria-label", "Прервать запуск");
+        button.title = "Прервать запуск";
+        interruptForm.append(button);
+        interruptForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          button.disabled = true;
+          button.textContent = "Прерывание…";
+          try {
+            const response = await fetch(interruptForm.action, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+              body: new URLSearchParams(new FormData(interruptForm)),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          } catch (error) {
+            button.disabled = false;
+            button.textContent = "Прервать";
+            window.alert(`Не удалось прервать запуск: ${error.message}`);
+          }
+        });
+        state.append(interruptForm);
+      } else {
+        state.classList.add("tile-run-spinner");
+        state.innerHTML = '<img src="/static/icons/run-spinner.svg" alt="" aria-hidden="true"><span>Выполняется</span>';
+      }
+      actionGroup.append(state);
     });
     runForms.forEach((runForm) => runForm.addEventListener("submit", () => {
       pendingCommandIDs.add(commandIDFor(runForm));
-      updateButtons(new Set());
+      updateTiles({}, false);
     }));
     const pollAvailability = async () => {
       try {
         const response = await fetch("/runs/availability", { headers: { "Accept": "application/json" }, cache: "no-store" });
         if (!response.ok) return;
         const availability = await response.json();
-        updateButtons(new Set(availability.command_ids || []));
+        updateTiles(availability.command_runs || {}, availability.can_interrupt === true);
       } catch {
         // Keep the server-rendered state if availability polling fails.
       }
